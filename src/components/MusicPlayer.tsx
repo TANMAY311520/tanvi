@@ -91,9 +91,6 @@ export const MusicPlayer: React.FC = () => {
                 <h2 className="text-2xl font-bold text-white mb-2">
                   {currentSong?.title || "Song"}
                 </h2>
-                <p className="text-lavender-300 text-sm">
-                  {currentSong?.artist || "Artist"}
-                </p>
                 <p className="text-purple-400 text-xs mt-2">
                   Track {currentTrack + 1} of {loveConfig.musicPlaylist.length}
                 </p>
