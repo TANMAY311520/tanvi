@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Reply, X } from "lucide-react";
 import { EmojiPicker } from "@/components/EmojiPicker";
+import { database } from "@/config/firebase";
+import { ref, push, set, onValue, update } from "firebase/database";
 
 interface Message {
   id: string;
@@ -44,30 +46,62 @@ export default function ChitChatPage() {
     setPartnerName(partner);
     setDisplayName(user === "Tanmay" ? "VIDHU" : "TANMAY");
 
-    const loadMessages = () => {
-      const saved = localStorage.getItem("tanvi_chitchat");
-      setMessages(saved ? JSON.parse(saved) : []);
-      localStorage.setItem("lastChatViewed", Date.now().toString());
-      setIsLoading(false);
+    try {
+      // Listen to messages from Firebase in real-time
+      const messagesRef = ref(database, "chitchat/messages");
+      const unsubscribe = onValue(
+        messagesRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            const messageList: Message[] = Object.entries(data).map(
+              ([key, value]: any) => ({
+                id: key,
+                ...value,
+              }),
+            );
+            // Sort by timestamp
+            messageList.sort((a, b) => a.timestamp - b.timestamp);
+            setMessages(messageList);
+          } else {
+            setMessages([]);
+          }
+          setIsLoading(false);
+          localStorage.setItem("lastChatViewed", Date.now().toString());
+        },
+        (error) => {
+          console.error("Firebase error:", error);
+          // Fallback to localStorage
+          const saved = localStorage.getItem("tanvi_chitchat");
+          setMessages(saved ? JSON.parse(saved) : []);
+          setIsLoading(false);
+        },
+      );
 
+      // Load mood
       const savedMood = localStorage.getItem(`mood_${user}_today`);
       if (savedMood) setTodaysMood(savedMood);
-    };
+      setMounted(true);
 
-    loadMessages();
-    const interval = setInterval(loadMessages, 500);
-    setMounted(true);
-    return () => clearInterval(interval);
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Firebase not configured:", error);
+      // Fallback to localStorage
+      const saved = localStorage.getItem("tanvi_chitchat");
+      setMessages(saved ? JSON.parse(saved) : []);
+      setIsLoading(false);
+      setMounted(true);
+    }
   }, [router]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (newMessage.trim() && currentUser) {
       const message: Message = {
-        id: Date.now().toString(),
+        id: "",
         sender: currentUser,
         text: newMessage,
         timestamp: Date.now(),
@@ -75,29 +109,49 @@ export default function ChitChatPage() {
         replyTo: replyingTo?.id,
       };
 
-      const updated = [...messages, message];
-      setMessages(updated);
-      localStorage.setItem("tanvi_chitchat", JSON.stringify(updated));
+      try {
+        // Send to Firebase
+        const messagesRef = ref(database, "chitchat/messages");
+        const newMessageRef = push(messagesRef);
+        await set(newMessageRef, {
+          sender: message.sender,
+          text: message.text,
+          timestamp: message.timestamp,
+          reactions: [],
+          replyTo: message.replyTo || null,
+        });
+      } catch (error) {
+        console.error("Error sending message:", error);
+        // Fallback: save locally
+        const updated = [...messages, message];
+        setMessages(updated);
+        localStorage.setItem("tanvi_chitchat", JSON.stringify(updated));
+      }
+
       setNewMessage("");
       setReplyingTo(null);
     }
   };
 
-  const handleAddReaction = (messageId: string, emoji: string) => {
-    const updated = messages.map((msg) => {
-      if (msg.id === messageId) {
-        const reactions = msg.reactions || [];
-        if (reactions.includes(emoji)) {
-          reactions.splice(reactions.indexOf(emoji), 1);
+  const handleAddReaction = async (messageId: string, emoji: string) => {
+    try {
+      const msgToUpdate = messages.find((m) => m.id === messageId);
+      if (msgToUpdate) {
+        const reactions = msgToUpdate.reactions || [];
+        let newReactions = [...reactions];
+
+        if (newReactions.includes(emoji)) {
+          newReactions = newReactions.filter((e) => e !== emoji);
         } else {
-          reactions.push(emoji);
+          newReactions.push(emoji);
         }
-        return { ...msg, reactions };
+
+        const messageRef = ref(database, `chitchat/messages/${messageId}`);
+        await update(messageRef, { reactions: newReactions });
       }
-      return msg;
-    });
-    setMessages(updated);
-    localStorage.setItem("tanvi_chitchat", JSON.stringify(updated));
+    } catch (error) {
+      console.error("Error updating reaction:", error);
+    }
     setShowEmojiReply("");
   };
 
