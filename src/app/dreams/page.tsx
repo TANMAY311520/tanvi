@@ -37,10 +37,10 @@ export default function DreamsPage() {
   const [dreams, setDreams] = useState<Dream[]>([...loveConfig.dreams]);
   const [confetti, setConfetti] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newDream, setNewDream] = useState({
+  const [newDream, setNewDream] = useState<Dream>({
     icon: "✨",
     text: "",
-    status: "dreaming" as const,
+    status: "dreaming",
   });
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function DreamsPage() {
       const updated = [...dreams, newDream];
       setDreams(updated);
       localStorage.setItem("tanvi_dreams", JSON.stringify(updated));
-      setNewDream({ icon: "✨", text: "", status: "dreaming" });
+      setNewDream({ icon: "✨", text: "", status: "dreaming" } as Dream);
       setShowAddModal(false);
     }
   };
